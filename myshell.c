@@ -15,13 +15,15 @@ BT18CSE091
 #include <fcntl.h>			// close(), open()
 #include <ctype.h>			// isspace()
 #include <limits.h>			// PATH_MAX
-#include <errno.h>			// error handling
+#include <errno.h>			// error handling (using perror() to print to STDERR)
 
 #define MAX_ARGC 12			// max no of space separated arguments in input (including '&&', '##', etc)
+#define true 1
+#define false 0
+#define bool int
 
 #define PRINT_INCORRECT() printf("Shell: Incorrect command\n");
 #define PRINT_EXITING() printf("Exiting shell...\n");
-
 
 // Basically splits entire string into an array with delimiter = space ( Python equivalent -> s = line.split(separator); argc = len(s) )
 // INPUTS - 1. line of input, 2. separator (for splitting), 3. pointer to size_t (that will modify it and store no of args found)
@@ -66,24 +68,14 @@ char** parseInput(char* line, size_t* no_of_commands, char* separator)
 	line[strcspn(line, "\n")] = 0;
 
 	if (strpbrk(line, "&&") != NULL) 		// first search for '&&'
-	{
 		strcpy(separator, "&&");
-	}	
 	else if (strpbrk(line, "##") != NULL) 	// then search for '##'
-	{
 		strcpy(separator, "##");
-	}
 	else if (strpbrk(line, ">") != NULL) 	// then search for '>'
-	{
 		strcpy(separator, ">");
-	}
-	else 									// if entire line is just one command, and without redirection (no occurence of "&&", "##" or ">")
+	else  // if entire line is just one command, and without redirection (no occurence of "&&", "##" or ">")
 		strcpy(separator, "");
 
-
-	// printf("Separator '%s' of length %d found!!\n", (separator), strlen((separator)));
-	// printf("strcmp(separator, \"&&\") = %d\n", strcmp((separator), "&&"));
-	
 	// NOTE: when strsep() (and hence our split() function) is called with separator = "", it returns entire string as a single token (which is what we want here)
 	// Hence, we are able to call our split() without checking what the separator actually equals to.
 	return split(line, separator, no_of_commands);
@@ -99,11 +91,13 @@ void print_string_array(char** arr, size_t argc)
 	printf("print_string_array over\n");
 }
 
-// This function will fork a new process to execute a command
+// This function will fork a new process to execute a single command
+// ( Also called n times in succession by executeSequentialCommands() )
 // "status" parameter gets modified to be either -1 (for failed process) or 0 for successful process
 // NOTE: the reason we call chdir() inside the PARENT and NOT the child is because chdir() only changes the working directory for the current process
+// separator = ""
 void executeCommand(char* command, int* status)
-{
+{	
 	*status = 0; // if no error then status will be 0
 
 	// printf("In executeCommand() !!\n");
@@ -124,6 +118,10 @@ void executeCommand(char* command, int* status)
 		pid_t rc = fork();
 		if(rc == 0) // it's the child process, so run command
 		{
+			// Reverts signals back to original behaviour, so that processes can be killed during execution in children 
+			signal(SIGINT, SIG_DFL);
+			signal(SIGTSTP, SIG_DFL);
+			
 			int ret = execvp(cmdargs[0], cmdargs);	// cmdargs[0] holds filename of process to run, all elements in cmdargs after that hold args for it	
 			// if execvp encounters error
 			if (ret == -1)
@@ -141,11 +139,41 @@ void executeCommand(char* command, int* status)
 }
 
 // This function will run multiple commands in parallel
-// It is also responsible for calling custom split fn with separator = ' ' for each individual command in char** commands to split each command into separate arguments and do the necesary task
 // separator = "&&"
 void executeParallelCommands(char** commands, size_t no_of_commands)
 {
+	int index = 0;
+	bool flag = false;
+	int rc;
+	size_t argc;
+	// one fork for each process that needs to be executed in parallel, store the corresponding returned pids in an array
+	do{
+		char** cmdargs = split(commands[index], " ", &argc);
+		rc = fork();
+		if (rc == 0) // child
+		{
+			// Reverts signals back to original behaviors, so that processes can be killed during execution in children*/ 
+    		signal(SIGINT, SIG_DFL);
+    		signal(SIGTSTP, SIG_DFL);
+			
+			flag = false;
+			int ret = execvp(cmdargs[0], cmdargs);	// cmdargs[0] holds filename of process to run, all elements in cmdargs after that hold args for it	
+			// if execvp encounters error
+			if (ret == -1)
+				PRINT_INCORRECT()
+			
+			exit(0);
+		}
+		else if (rc > 1) // parent
+			flag = true;
+		else
+			perror("Error in fork()");
+		index++;
+	}while(index < no_of_commands && flag);
 
+	// now just wait for all children
+	for (int i = 0; i < no_of_commands; i++)
+		waitpid(-1, NULL, WUNTRACED);
 }
 
 // This function will run multiple commands sequentially
@@ -153,7 +181,9 @@ void executeParallelCommands(char** commands, size_t no_of_commands)
 // separator = "##"
 void executeSequentialCommands(char** commands, size_t no_of_commands)
 {	
-
+	int status;
+	for(int i = 0; i < no_of_commands; i++)
+		executeCommand(commands[i], &status);
 }
 
 // This function will run a single command with output redirected to an output file specificed by user
@@ -162,8 +192,6 @@ void executeCommandRedirection(char** commands, size_t no_of_commands)
 {
 	// here, commands[0] should hold the actual command with argument, 
 	// and commands[1] should hold the file to actually write the output to.
-
-	printf("Inside executeCommandRedirection()\n");
 
 	if (no_of_commands != 2)
 	{
@@ -176,11 +204,8 @@ void executeCommandRedirection(char** commands, size_t no_of_commands)
 	size_t argc; // argc contains no of elements in cmdargs
 	char** cmdargs = split(commands[0], " ", &argc); // cmdargs contains list of all args occuring before '>' separator (including command itself)
 
-	// printf("Done with split\n");
-
 	size_t path_argc;
 	char** filepath = split(commands[1], " ", &path_argc);
-	// print_string_array(filepath, path_argc);
 
 	if(path_argc == 1) // valid case (anything other than this should probably be invalid)
 	{
@@ -201,8 +226,6 @@ void executeCommandRedirection(char** commands, size_t no_of_commands)
 			// Now actually perform the exec, whose output will get redirected to specified file
 			executeCommand(commands[0], &ret);	
 
-			// printf("executeCommand() done. ret = %d\n", ret);
-
 			// if executeCommand() was successful, open() didn't cause an error and dup2() was successful
 			if (ret != -1 && fd >= 0 &&	dup2(stdoutCopy, STDOUT_FILENO) != -1)
 			{
@@ -215,78 +238,16 @@ void executeCommandRedirection(char** commands, size_t no_of_commands)
 		PRINT_INCORRECT()
 		fprintf(stderr, "executeCommandRedirection(): path_argc = %zu != 1\n", path_argc);
 	}
-
-/*
-	// pid_t rc = fork();
-	// if(rc == 0) // it's the child process, so redirect output to file, then run exec
-	// {
-		// /// do redirection of output:
-		// int fd_stdout = fileno(stdout);
-		// close(fd_stdout);
-		
-		// size_t path_argc;
-		// char** filepath = split(commands[1], " ", &path_argc);
-		// // print_string_array(filepath, path_argc);
-
-		// if(path_argc == 1) // valid case (anything other than this should probably be invalid)
-		// {
-		// 	fd = open(filepath[0], O_RDWR|O_CREAT|O_TRUNC, S_IRUSR|S_IWUSR);
-			
-		// 	if (fd < 0) // error in opening file, log to stderr or something
-		// 	{
-		// 		PRINT_INCORRECT()
-		// 		perror("executeCommandRedirection(): couldn't open file \"%s\"");
-		// 	}
-		// 	else // file opened successfully => use dup2() to redirect stdout to file, then execute command
-		// 	{
-		// 		// redirect stdout to file
-		// 		dup2(fd, STDOUT_FILENO); 
-
-		// 		if (strcmp(cmdargs[0], "cd")==0 && argc==2) // use chdir() command here
-		// 		{
-		// 			if(chdir(cmdargs[1]) != 0) // chdir encountered an error
-		// 			{
-		// 				perror("executeCommandRedirection(): chdir()");
-		// 			}
-		// 			return;
-		// 		}
-
-		// 		// Now actually perform the exec, whose output will get redirected to specified file
-		// 		int ret = execvp(cmdargs[0], cmdargs);	// cmdargs[0] holds filename of process to run, all elements in cmdargs after that hold args for it	
-
-		// 		if (ret == -1) // if execvp returns error
-		// 			PRINT_INCORRECT()
-
-		// 		exit(0); // terminate child process
-		// 	}
-		// }
-		// else	// invalid file path (space separated file path)
-		// {
-		// 	PRINT_INCORRECT()
-		// 	fprintf(stderr, "executeCommandRedirection(): path_argc = %zu != 1\n", path_argc);
-		// }
-	}
-	// else if (rc > 0) // it's the parent, so wait for child to terminate and then REVERSE OUTPUT REDIRECTION (if it happened)
-	// {
-	// 	int wstatus;
-	// 	wait(0);	// wait for process from same group as current process to terminate
-
-	// 	/// now reverse the redirect after the job is done
-
-	// 	if (fd >= 0) // which means open() was definitely called to open specific file, and it didn't cause an error.
-	// 		dup2(STDOUT_FILENO, fd);
-	// }
-	// else	// some error in forking hehe
-	// {
-	// 	fprintf(stderr, "Error in executeCommandRedirection() -> couldn't fork process!\n");
-	// }
-*/
 }
 
 int main()
 {
 	// Initial declarations
 	size_t buffer_size = 80;
+
+	//Used for ignoring both Ctrl+C(SIGINT) andcCtrl+Z(SIGSTP) in the shell 
+    signal(SIGINT, SIG_IGN);
+    signal(SIGTSTP, SIG_IGN);
 
 	while(1)	// This loop will keep the shell running until user exits.
 	{
@@ -301,7 +262,7 @@ int main()
 		else
 			perror("main() -> error in getcwd():"); // prints to STDERR
 		
-		printf("(%d) ", getpid());
+		// printf("(%d) ", getpid());            only for debug purposes
 
 		getline(&input, &buffer_size, stdin); // get line input, tokenize it, convert to char** result
 		
@@ -309,19 +270,15 @@ int main()
 			continue;
 
 		char** commands = parseInput(input, &no_of_commands, separator);
-		// print_string_array(commands, no_of_commands);
-		
+
 		size_t __disposable1;
+		int __disposable2;
+		
 		if(strcmp(split(strdup(commands[0]), " ", &__disposable1)[0], "exit") == 0) // When user uses exit command.
 		{
 			PRINT_EXITING()
 			break;
 		}
-		// printf("Back hereGoing to print separator now: ");
-		// printf("'%s'\n", separator);
-		// printf("Going to start strcmp stuff, strlen(separator) = %d\n", strlen(separator));
-		
-		int __disposable2;
 
 		if(strcmp(separator, "&&") == 0)
 			executeParallelCommands(commands, no_of_commands);	 	// For running multiple commands in parallel 
