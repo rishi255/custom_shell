@@ -1,4 +1,2 @@
-/a.out
-/myshell-template.c
-/newfile
-/test1.c
+*
+!myshell.c
