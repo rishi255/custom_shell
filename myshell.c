@@ -22,8 +22,8 @@ BT18CSE091
 #define MAX_ARGC 15			// max no of space separated arguments in input (including '&&', '##', etc)
 #define bool int
 
-#define PRINT_INCORRECT() printf("Shell: Incorrect command\n");
-#define PRINT_EXITING() printf("Exiting shell...\n");
+void PRINT_INCORRECT() 		{ printf("Shell: Incorrect command\n"); }
+void PRINT_EXITING()	 	{ printf("Exiting shell...\n"); }
 
 /// Print the prompt in format - currentWorkingDirectory$
 void printWorkingDirectory()
@@ -113,7 +113,7 @@ void executeParallelCommands(char** commands, size_t no_of_commands)
 			int ret = execvp(cmdargs[0], cmdargs);	// cmdargs[0] holds filename of process to run, all elements in cmdargs after that hold args for it	
 			// if execvp encounters error
 			if (ret == -1)
-				PRINT_INCORRECT()
+				PRINT_INCORRECT();
 			
 			exit(0);
 		}
@@ -163,7 +163,7 @@ void executeCommand(char* command, int* status)
 			int ret = execvp(cmdargs[0], cmdargs);	// cmdargs[0] holds filename of process to run, all elements in cmdargs after that hold args for it	
 			// if execvp encounters error
 			if (ret == -1)
-				PRINT_INCORRECT()
+				PRINT_INCORRECT();
 			
 			*status = ret;
 			exit(0); // terminate child process
@@ -184,7 +184,7 @@ void executeCommandRedirection(char** commands, size_t no_of_commands)
 
 	if (no_of_commands != 2)
 	{
-		PRINT_INCORRECT()
+		PRINT_INCORRECT();
 		// DON'T REPLACE THIS fprintf() WITH perror() because this was just doing validation and we don't know what errno is set to 
 		fprintf(stderr, "Error in executeCommandRedirection() -> no of commands = %zu != 2\n", no_of_commands);
 		return;
@@ -202,7 +202,7 @@ void executeCommandRedirection(char** commands, size_t no_of_commands)
 		
 		if (fd < 0) // error in opening file, log to stderr or something
 		{
-			PRINT_INCORRECT()
+			PRINT_INCORRECT();
 			perror("executeCommandRedirection(): couldn't open file \"%s\"");
 		}
 		else // file opened successfully => redirect stdout to file, then execute command, then restore stdout
@@ -222,7 +222,7 @@ void executeCommandRedirection(char** commands, size_t no_of_commands)
 	}
 	else	// invalid file path (space separated file path)
 	{
-		PRINT_INCORRECT()
+		PRINT_INCORRECT();
 		fprintf(stderr, "executeCommandRedirection(): path_argc = %zu != 1\n", path_argc);
 	}
 }
@@ -237,22 +237,22 @@ void executeSequentialCommands(char** commands, size_t no_of_commands)
 		executeCommand(commands[i], &status);
 }
 
+size_t __disposable1;
+int __disposable2;
+
 int main()
 {
 	size_t input_size = 100;
 
-	size_t __disposable1;
-	int __disposable2;
-
 	//Used for ignoring both Ctrl+C(SIGINT) and Ctrl+Z(SIGSTP) in the shell 
-    signal(SIGINT, SIG_IGN);
     signal(SIGTSTP, SIG_IGN);
+    signal(SIGINT, SIG_IGN);
 
 	while(1)	// This loop will keep the shell running until user exits.
 	{
 		size_t no_of_commands;		
 		char* input_line = malloc(input_size); 	// input buffer
-		char* separator = malloc(4); 			// separator between commands (if one or more commands are there in the same line)
+		char* separator = malloc(5); 			// separator between commands (if one or more commands are there in the same line)
 
 		printWorkingDirectory();
 		
@@ -265,7 +265,7 @@ int main()
 
 		if( ! strcmp(split(strdup(commands[0]), " ", &__disposable1)[0], "exit")) // When user uses exit command.
 		{
-			PRINT_EXITING()
+			PRINT_EXITING();
 			break;
 		}
 
