@@ -16,4 +16,4 @@ The shell is able to handle signals generated from keyboard using `Ctrl + C` and
 The shell supports multiple command execution either sequentially or in parallel. The commands separated by `&&` are executed in parallel and the commands separated by `##` are executed sequentially. Also the shell waits for all the commands to be terminated (for parallel and sequential executions, both) before accepting further inputs. Simultaneous use of `&&` and `##` has **not** been handled.  
 
 ## 6. Output redirection  
-The shell is able to redirect `STDOUT` for the commands using `>` symbol. For example, `ls > info.out` writes the output of `ls` command to `info.out` file instead of writing it on screen. Simultaneous use of multiple commands along with output redirection has **not** been handled.  
+The shell is able to redirect `STDOUT` for the commands using `>` symbol. For example, `ls > infofile` writes the output of `ls` command to `infofile` file instead of writing it on screen. Simultaneous use of multiple commands along with output redirection has **not** been handled.  
